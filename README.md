@@ -14,7 +14,7 @@ If you want to use the library, i.e. access the evaluation board, without root r
  3. Reload the udev rules
  `sudo udevadm trigger`
   
- ## Usage with artiq
+## Usage with artiq
  To use the package within `artiq` just activate the corresponding virtual environment and run 
  `python3 setup.py install`
  When accessing the device in the preparation phase of an experiment, use the `AD9959.reset()` method to prevent USBErrors due to timeout.
