@@ -186,7 +186,7 @@ class AD9959(object):
             ID or list of the channel IDs to select e.g. [0,2,3]
 
         """
-        if np.issubdtype(channel, np.integer):
+        if np.issubdtype(type(channel), np.integer):
             channels = [channel]
         else:
             channels = [c for c in channel]
