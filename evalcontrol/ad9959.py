@@ -1,6 +1,8 @@
 import usb
 import time
 
+import numpy as np
+
 class AD9959(object):
     """This class emulates the AD9959 evaluation board for python.
 
@@ -184,7 +186,7 @@ class AD9959(object):
             ID or list of the channel IDs to select e.g. [0,2,3]
 
         """
-        if type(channel) == int:
+        if np.issubdtype(channel, np.integer):
             channels = [channel]
         else:
             channels = [c for c in channel]
