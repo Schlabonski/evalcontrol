@@ -19,6 +19,7 @@ class AD9959(object):
 
         """
         dev = usb.core.find(idVendor=vid, idProduct=pid)
+        self.dev = dev
         dev.set_configuration()
         cnf = dev.configurations()[0]
         intf = cnf[(0,0)]
@@ -39,6 +40,14 @@ class AD9959(object):
         # set default value for auto IO update
         self.auto_update = auto_update
 
+    def _reset_usb_handler(self):
+        """Resets the usb handler via which communication takes place.
+
+        This method can be used to prevent USBErrors that occur when communication with the device times out
+        because it is still in use by another process.
+        """
+        self.dev.reset()
+        
     def _write_to_dds_register(self, register, word):
         """Writes a word to the given register of the dds chip.
 
