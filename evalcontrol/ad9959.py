@@ -228,7 +228,8 @@ class AD9959(object):
             fraction_bin = (32-len(fraction_bin)) * '0' + fraction_bin
         closest_possible_value = (int(fraction_bin, base=2)/(2**32 -1) *
                                     self.system_clock_frequency)
-        print('Setting frequency to closest possible value {0}MHz'.format(closest_possible_value/1e6))
+        print('Setting frequency of channel {1} to closest possible value{0}MHz'.format(
+                                                        closest_possible_value/1e6, channel))
 
         # set the frequency word in the frequency register
         frequency_word = ''.join(' 0' + b for b in fraction_bin)
