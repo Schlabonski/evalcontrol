@@ -225,7 +225,7 @@ class AD9959(object):
 
         # calculate the fraction of the full frequency
         fraction = frequency/self.system_clock_frequency
-        fraction_bin = bin(round(fraction * (2**32 - 1))).lstrip('0b') # full range are 32 bit
+        fraction_bin = bin(int(round(fraction * (2**32 - 1)))).lstrip('0b') # full range are 32 bit
         if len(fraction_bin) < 32:
             fraction_bin = (32-len(fraction_bin)) * '0' + fraction_bin
         closest_possible_value = (int(fraction_bin, base=2)/(2**32 -1) *
