@@ -240,6 +240,7 @@ class AD9959(object):
 
         csr_word = ''.join(' 0' + b for b in csr_new_bin)
         csr_word = csr_word[1:]
+        word = csr_word
 
         # express the register name as a binary. Maintain the format that is
         # understood by endpoint 0x04. The first bit signifies read/write,
@@ -271,6 +272,7 @@ class AD9959(object):
         # set the frequency word in the frequency register
         frequency_word = ''.join(' 0' + b for b in fraction_bin)
         frequency_word = frequency_word[1:]
+        word = frequency_word
 
         # express the register name as a binary. Maintain the format that is
         # understood by endpoint 0x04. The first bit signifies read/write,
