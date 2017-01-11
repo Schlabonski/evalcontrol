@@ -207,6 +207,103 @@ class AD9959(object):
 
         self._write_to_dds_register(0x00, csr_word)
 
+    def precompute_frequency_word(self, channel, frequency):
+        """Precomputes a frequency tuning word for given channel(s) and frequency.
+        
+        The current implementation of this method is repetitive and clumsy!
+
+        :channel:  int or list
+            Channel number or list of channel numbers.
+        :frequency: float
+            frequency to be set on channel(s)
+        :returns: bytearray, bytearray
+           The message to select the channels and set the frequency word, which can both
+           be sent to self._ep4
+
+        """
+        if np.issubdtype(type(channel), np.integer):
+            channels = [channel]
+        else:
+            channels = [c for c in channel]
+
+        # set the channels in the channel select register
+        channel_select_bin = list('0000')
+        for ch in channels:
+            channel_select_bin[ch] = '1'
+        channel_select_bin = channel_select_bin[::-1] # we have inverse order
+        channel_select_bin = ''.join(channel_select_bin)
+                                                      # in the register
+        # preserve the information that is stored in the CSR
+        csr_old = self._read_from_register(0x00, 8)
+        csr_old_bin = ''.join(str(b) for b in csr_old)
+        csr_new_bin = channel_select_bin[:4] + csr_old_bin[4:]
+
+        csr_word = ''.join(' 0' + b for b in csr_new_bin)
+        csr_word = csr_word[1:]
+
+        # express the register name as a binary. Maintain the format that is
+        # understood by endpoint 0x04. The first bit signifies read/write,
+        # the next 7 bits specify the register
+        register_bin = bin(0x00).lstrip('0b')
+        if len(register_bin) < 7:
+            register_bin = (7-len(register_bin))*'0' + register_bin
+
+        register_bin = ''.join(' 0' + b for b in register_bin)
+
+        # construct the full message that is sent to the endpoint
+        message = '00' + register_bin  + ' ' + word
+        message_channel_select = bytearray.fromhex(message)
+
+        ## Now compute the same message to select the frequency
+        assert frequency <= self.system_clock_frequency, ("Frequency should not"
+                + " exceed system clock frequency! System clock frequency is {0}Hz".format(self.system_clock_frequency))
+
+        # calculate the fraction of the full frequency
+        fraction = frequency/self.system_clock_frequency
+        fraction_bin = bin(round(fraction * (2**32 - 1))).lstrip('0b') # full range are 32 bit
+        if len(fraction_bin) < 32:
+            fraction_bin = (32-len(fraction_bin)) * '0' + fraction_bin
+        closest_possible_value = (int(fraction_bin, base=2)/(2**32 -1) *
+                                    self.system_clock_frequency)
+        print('Frequency of channel {1} encoded as closest possible value {0}MHz'.format(
+                                                        closest_possible_value/1e6, channel))
+
+        # set the frequency word in the frequency register
+        frequency_word = ''.join(' 0' + b for b in fraction_bin)
+        frequency_word = frequency_word[1:]
+
+        # express the register name as a binary. Maintain the format that is
+        # understood by endpoint 0x04. The first bit signifies read/write,
+        # the next 7 bits specify the register
+        register_bin = bin(0x04).lstrip('0b') # 0x04 = frequency register
+        if len(register_bin) < 7:
+            register_bin = (7-len(register_bin))*'0' + register_bin
+
+        register_bin = ''.join(' 0' + b for b in register_bin)
+
+        # construct the full message that is sent to the endpoint
+        message = '00' + register_bin  + ' ' + word
+        message_frequency_word = bytearray.fromhex(message)
+
+        return message_channel_select, message_frequency_word
+
+    def set_precomputed_frequency(message_channel_select, message_frequency_word):
+        """This method sets the frequency from precomputed byte-encoded words.
+
+        The input for this method should be the ouput of self.precompute_frequency_word.
+        This method only send the precomputed byte arrays to enpoint 4 of the USB handler and
+        thus be faster than the self.set_frequency method.
+
+        :message_channel_select: bytearray
+            The bytearray that encodes a given channel selection.
+
+        :message_frequency_word: bytearray
+            Encodes the setting of the frequency word.
+
+        """
+        self._usb_handler.bulkWrite(self._ep4, message_channel_select)
+        self._usb_handler.bulkWrite(self._ep4, message_frequency_word)
+
     def set_frequency(self, frequency, channel=0):
         """Sets a new frequency for a given channel.
 
