@@ -306,18 +306,23 @@ class AD9959(object):
         self._usb_handler.bulkWrite(self._ep4, message_channel_select)
         self._usb_handler.bulkWrite(self._ep4, message_frequency_word)
 
-    def set_frequency(self, frequency, channel=0):
+    def set_frequency(self, frequency, channel=0, channel_word=0):
         """Sets a new frequency for a given channel.
 
         :frequency: float
             The new frequency in Hz. Should not exceed `system_clock_frequency`.
         :channel: int or seq
             Channel(s) for which the frequency should be set.
+        :channel_word: int
+            Determines the channel_word to which the frequency is written. Each channel has 16
+            channel_words that can be used.
 
         """
 
         assert frequency <= self.system_clock_frequency, ("Frequency should not"
                 + " exceed system clock frequency! System clock frequency is {0}Hz".format(self.system_clock_frequency))
+
+        assert channel_word < 16, ("Channel word cannot exceed 15, input was {0}".format(channel_word))
 
         # select the chosen channels
         self._channel_select(channel)
@@ -329,13 +334,18 @@ class AD9959(object):
             fraction_bin = (32-len(fraction_bin)) * '0' + fraction_bin
         closest_possible_value = (int(fraction_bin, base=2)/(2**32 -1) *
                                     self.system_clock_frequency)
-        print('Setting frequency of channel {1} to closest possible value {0}MHz'.format(
-                                                        closest_possible_value/1e6, channel))
+        print('Setting frequency of channel {1}:{2} to closest possible value {0}MHz'.format(
+                                                        closest_possible_value/1e6, channel, channel_word))
 
         # set the frequency word in the frequency register
         frequency_word = ''.join(' 0' + b for b in fraction_bin)
         frequency_word = frequency_word[1:]
-        self._write_to_dds_register(0x04, frequency_word)
+        if channel_word == 0:
+            self._write_to_dds_register(0x04, frequency_word)
+        else:
+            register = channel_word - 1 + 0x0A
+            self._write_to_dds_register(register, frequency_word)
+
 
         # load and update I/O
         self._load_IO()
@@ -400,10 +410,14 @@ class AD9959(object):
         if self.auto_update:
             self._update_IO()
 
-    def _enable_channel_frequency_modulation(self, channel=0, disable=False):
+    def _enable_channel_modulation(self, channel=0, modulation_type='frequency', disable=False):
         """Enables frequency modulation for selected channel(s).
         :channel: int or list
             channel ID or list of channel IDs that are selected
+        :modulation_type: str
+            can be 'frequency', 'phase' or 'amplitude'. Only frequency is implemented so far.
+        :disable: bool
+            when True, modulation for this channel(s) is disabled.
 
         """
         if np.issubdtype(type(channel), np.integer):
@@ -417,7 +431,8 @@ class AD9959(object):
             # the modulation type of the channel is encoded in register 0x03[23:22].
             # 00 disables modulation, 10 is frequency modulation.
             if not disable:
-                modulation_type_bin = '10'
+                if modulation_type == 'frequency':
+                    modulation_type_bin = '10'
             else:
                 modulation_type_bin = '00'
 
@@ -436,3 +451,68 @@ class AD9959(object):
             self._load_IO()
             if self.auto_update:
                 self._update_IO()
+
+    def enable_modulation(self, level=2, active_channels=[0,1,2,3], modulation_type='frequency'):
+        """This method chooses the modulation level and type.
+
+        :level: int
+            Can be either 2, 4 or 16. The level determines the number of registers from
+            which active channels can choose.
+        :active_channels: int or list
+            In 4- and 16-level modulation this determines which channels can be modulated.
+            Note that as there is only a 4 bit input (P0-P3), in 4-level modulation only 2 channels
+            can be modulated, in 16-level modulation only one.
+        :modulation_type: str
+            'frequency', 'amplitude' or 'phase'
+
+        """
+        if np.issubdtype(type(active_channels), np.integer):
+            active_channels = [active_channels]
+        active_channels.sort()
+
+        # 1. get the current content of (global) function register 1
+        fr_old = self._read_from_register(0x01, 24)
+        fr_old_bin = ''.join(str(b) for b in fr_old)
+
+        # 2. set the modulation level
+        level_bin = '00'
+        if level == 4:
+            level_bin = '01'
+        elif level == 16:
+            level_bin = '11'
+        # 3. replace the old level
+        fr_new_level = fr_old_bin[:14] + level_bin + fr_old_bin[16:]
+
+        # 3.1 if the level is 4 or 16, also the PPC bits need to be updated
+        if level != 2:
+            # mappings are taken from the manual of the AD9959
+            if level == 4:
+                configurations = [[0,1], [0,2], [0,3], [1,2], [1,3], [2,3]]
+                ppcs_combinations = [bin(i)[2:] for i in range(6)]
+
+            elif level == 16:
+                configurations = [[i] for i in range(4)]
+                ppcs_combinations = [bin(i)[2:] for i in range(4)]
+
+            i = configurations.index(active_channels)
+            PPC_bin = ppcs_combinations[i]
+            if len(PPC_bin) < 3:
+                PPC_bin = '0' * (3 - len(PPC_bin)) + PPC_bin
+
+            # update PPC word
+            fr_new_level = fr_new_level[:9] + PPC_bin + fr_new_level[12:]
+        
+        # write the new FR1 word to the register
+        fr_new_word = ''.join(' 0' + b for b in fr_new_level)
+        fr_new_word = fr_new_word[1:]
+        #return fr_new_word, fr_new_level
+
+        self._write_to_dds_register(0x01, fr_new_word)
+        
+        self._load_IO()
+        if self.auto_update:
+            self._update_IO()
+
+        # we also make sure that the active channels are in correct modulation mode
+        for ch in active_channels:
+            self._enable_channel_modulation(channel=ch, modulation_type=modulation_type)
