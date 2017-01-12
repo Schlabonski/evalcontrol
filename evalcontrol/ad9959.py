@@ -399,3 +399,40 @@ class AD9959(object):
         self._load_IO()
         if self.auto_update:
             self._update_IO()
+
+    def _enable_channel_frequency_modulation(self, channel=0, disable=False):
+        """Enables frequency modulation for selected channel(s).
+        :channel: int or list
+            channel ID or list of channel IDs that are selected
+
+        """
+        if np.issubdtype(type(channel), np.integer):
+            channel = [channel]
+        
+        # we need to iterate over all channels, as the channel's individual function registers
+        # might have different content
+        for ch in channel:
+            self._channel_select(ch)
+
+            # the modulation type of the channel is encoded in register 0x03[23:22].
+            # 00 disables modulation, 10 is frequency modulation.
+            if not disable:
+                modulation_type_bin = '10'
+            else:
+                modulation_type_bin = '00'
+
+            # 1. read the old CFR content
+            cfr_old = self._read_from_register(0x03, 24)
+            cfr_old_bin = ''.join(str(b) for b in cfr_old)
+
+            # 2. replace the modulation type
+            cfr_new_bin = modulation_type_bin + cfr_old_bin[2:]
+            
+            cfr_word_new = ''.join(' 0' + b for b in cfr_new_bin)
+            cfr_word_new = cfr_word_new[1:]
+
+            self._write_to_dds_register(0x03, cfr_word_new)
+
+            self._load_IO()
+            if self.auto_update:
+                self._update_IO()
