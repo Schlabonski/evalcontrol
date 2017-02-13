@@ -31,7 +31,7 @@ If you want to use the library, i.e. access the evaluation board, without root r
  When accessing the device in the preparation phase of an experiment, use the `AD9959.reset()` method to prevent USBErrors due to timeout.
 
 ## Use on Windows
-To use this package on windows, you need to install a libusb port.
+To use this package on windows, you need to install a port of the libusb driver.
  1. Download from https://sourceforge.net/projects/libusb-win32/
  2. copy `libusb0.dll` to C:\Windows\System32
  3. copy `libusb0.sys` to C:\Windows\System32\drivers
