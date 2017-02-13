@@ -10,7 +10,8 @@ git clone https://github.com/Schlabonski/evalcontrol`
 cd evalcontrol
 python3 setup.py install
 ```
-Keep in mind that this library works on top of `pyusb` which uses `libusb` so these packages should both be installed as well.
+
+*Requirements*: This library works on top of `pyusb` which uses `libusb` so these should both be installed as well.
 To install `liusb` on windows, see instructions below.
 
 ## Use without sudo
