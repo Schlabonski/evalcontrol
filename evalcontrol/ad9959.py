@@ -516,3 +516,109 @@ class AD9959(object):
         # we also make sure that the active channels are in correct modulation mode
         for ch in active_channels:
             self._enable_channel_modulation(channel=ch, modulation_type=modulation_type)
+
+    def _enable_channel_linear_sweep(self, channels=0, disable=False):
+        """TODO: Docstring for _enable_channel_linear_sweep.
+
+        :channel: int or list
+            channel ID or list of channel IDs that are selected
+        :disable: bool
+            when True, modulation for this channel(s) is disabled.
+
+        """
+        if np.issubdtype(type(channel), np.integer):
+            channel = [channel]
+        
+        # the modulation type of the channel is encoded in CFR 0x03[14].
+        # 0 disables linear sweep, 1 enables
+        if not disable:
+            ls_enable_bin = '1'
+        else:
+            ls_enable_bin = '0'
+
+        # we need to iterate over all channels, as the channel's individual function registers
+        # might have different content
+        for ch in channel:
+            self._channel_select(ch)
+
+            # 1. read the old CFR content
+            cfr_old = self._read_from_register(0x03, 24)
+            cfr_old_bin = ''.join(str(b) for b in cfr_old)
+
+            # 2. replace the CFR by one with updated LS enable bit
+            cfr_new_bin = cfr_old_bin[:9] + ls_enable_bin + cfr_old_bin[10:]
+            
+            cfr_word_new = ''.join(' 0' + b for b in cfr_new_bin) # translate to bytes
+            cfr_word_new = cfr_word_new[1:] # crop the first white space
+
+            self._write_to_dds_register(0x03, cfr_word_new)
+
+            self._load_IO()
+            if self.auto_update:
+                self._update_IO()
+
+            # print summary message
+            mes = ['Disabled', 'Enabled'][int(ls_enable_bin)]
+            mes += ' linear sweep for channel {0}.'.format(ch)
+            print(mes)
+
+        return
+
+
+    def configure_linear_sweep(self, channels=[0,1,2,3], lsrr=0, fsrr=0, rdw=0, fdw=0, disable=False):
+        """Configure the linear frequency sweep parameters for selected channels.
+
+        The linear sweep ramp rate (lsrr) specifies the timestep of the rising ramp, falling sweep ramp rate
+        (fsrr) works accordingly.
+        Rising delta word specifies the rising frequency stepsize, falling delta works respectively.
+
+        :channels: int or list
+            Channel ID(s) for channels to configure.
+        :lsrr: float
+            Timestep (in seconds) of the rising sweep. Can be 1-256 times the inverse SYNC_CLK frequency.
+            SYNC_CLK frequency is the SYSCLK divided by 4.
+        :fsrr: float
+            Same as :lsrr:
+        :rdw: float
+            Frequency step (in Hertz) of the rising sweep. Can be chosen similar to the channel frequency.
+        :fdw: float
+            Same as :rdw:
+        :disable: bool
+            If True, disable linear sweep for selected channels.
+        :returns: TODO
+
+        """
+        if np.issubdtype(type(channels), np.integer):
+            channels = [channels]
+        channels.sort()
+
+        # If desired, disable selected channels and return.
+        self._enable_channel_linear_sweep(channels, disable=disable)
+        if disable:
+            return
+
+        # All linear sweep properties are channel specific, so we iterate over channels.
+        for ch in channels:
+            self._channel_select(ch)
+
+            # 1. Set the new falling and rising sweep ramp rate
+            ramp_rate_word = ''
+            rr_name = ['Falling', 'Rising']
+            for rr in [fsrr, rsrr]:
+                # 1.1 Compute RR word in binary
+                rr_time_step = 1/self.ref_clock_frequency
+                fraction_bin = round(rr/rr_time_step * 256)
+
+                # 1.2 Check for correct bounds
+                if fraction_bin < 1:
+                    print('Ramp rate below lower limit, choosing lowest possible value.')
+                elif fraction_bin > 256:
+                    print('Ramp rate above upper limit, choosing highest possible value.')
+
+                # align the fraction_bin with binary representation
+                print('Setting {0} sweep ramp rate to {1:1.3e} s'.format(rr_name[i], fraction_bin*rr_time_step))
+                fraction_bin -= 1
+                ramp_rate_word += bin(fraction_bin)[2:]
+            # fill the ramp rate word up to 32 bit
+            ramp_rate_word += 16 * '0'
+
