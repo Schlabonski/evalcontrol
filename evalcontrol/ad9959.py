@@ -597,28 +597,53 @@ class AD9959(object):
         if disable:
             return
 
-        # All linear sweep properties are channel specific, so we iterate over channels.
-        for ch in channels:
-            self._channel_select(ch)
+        # All linear sweep properties are in individual channel registers, so we
+        # can write all channels in one go
+        self._channel_select(channels)
 
-            # 1. Set the new falling and rising sweep ramp rate
-            ramp_rate_word = ''
-            rr_name = ['Falling', 'Rising']
-            for rr in [fsrr, rsrr]:
-                # 1.1 Compute RR word in binary
-                rr_time_step = 1/self.ref_clock_frequency
-                fraction_bin = round(rr/rr_time_step * 256)
+        # 1. Set the new falling and rising sweep ramp rate
+        ramp_rate_word = ''
+        rr_name = ['Falling', 'Rising']
+        for rr in [fsrr, rsrr]:
+            # 1.1 Compute RR word in binary
+            rr_time_step = 1/self.ref_clock_frequency
+            fraction_bin = round(rr/rr_time_step * 256)
 
-                # 1.2 Check for correct bounds
-                if fraction_bin < 1:
-                    print('Ramp rate below lower limit, choosing lowest possible value.')
-                elif fraction_bin > 256:
-                    print('Ramp rate above upper limit, choosing highest possible value.')
+            # 1.2 Check for correct bounds
+            if fraction_bin < 1:
+                print('Ramp rate below lower limit, choosing lowest possible value.')
+            elif fraction_bin > 256:
+                print('Ramp rate above upper limit, choosing highest possible value.')
 
-                # align the fraction_bin with binary representation
-                print('Setting {0} sweep ramp rate to {1:1.3e} s'.format(rr_name[i], fraction_bin*rr_time_step))
-                fraction_bin -= 1
-                ramp_rate_word += bin(fraction_bin)[2:]
-            # fill the ramp rate word up to 32 bit
-            ramp_rate_word += 16 * '0'
+            # align the fraction_bin with binary representation
+            print('Setting {0} sweep ramp rate to {1:1.3e} s'.format(rr_name[i], fraction_bin*rr_time_step))
+            fraction_bin -= 1
+            ramp_rate_word += bin(fraction_bin)[2:]
+        # fill the ramp rate word up to 32 bit
+        ramp_rate_word += 16 * '0'
+        
+        # write the new ramp rate word to the RR register
+        ramp_rate_word = ''.join(' 0' + b for b in ramp_rate_word)
+        ramp_rate_word = ramp_rate_word[1:]
+        self._write_to_dds_register(0x07, ramp_rate_word)
 
+        # 2. Set the falling and rising delta words.
+        # calculate the fraction of the full frequency
+        delta_word_registers = [0x09, 0x08]
+        delta_words = [fdw, rdw]
+        for i, dw in enumerate(delta_words):
+            fraction = dw/self.system_clock_frequency
+            fraction_bin = bin(int(round(fraction * (2**32 - 1)))).lstrip('0b') # full range are 32 bit
+            if len(fraction_bin) < 32:
+                fraction_bin = (32-len(fraction_bin)) * '0' + fraction_bin
+            closest_possible_value = (int(fraction_bin, base=2)/(2**32 -1) *
+                                        self.system_clock_frequency)
+            print('Setting {2} delta word of channel {1} to closest possible value {0}MHz'.format(
+                                                            closest_possible_value/1e6, channel, rr_name[i]))
+
+            # set the frequency word in the frequency register
+            frequency_word = ''.join(' 0' + b for b in fraction_bin)
+            frequency_word = frequency_word[1:]
+            if channel_word == 0:
+                self._write_to_dds_register(delta_word_registers[i], frequency_word)
+        return
