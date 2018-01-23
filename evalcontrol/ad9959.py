@@ -526,8 +526,8 @@ class AD9959(object):
             when True, modulation for this channel(s) is disabled.
 
         """
-        if np.issubdtype(type(channel), np.integer):
-            channel = [channel]
+        if np.issubdtype(type(channels), np.integer):
+            channels = [channels]
         
         # the modulation type of the channel is encoded in CFR 0x03[14].
         # 0 disables linear sweep, 1 enables
@@ -538,7 +538,7 @@ class AD9959(object):
 
         # we need to iterate over all channels, as the channel's individual function registers
         # might have different content
-        for ch in channel:
+        for ch in channels:
             self._channel_select(ch)
 
             # 1. read the old CFR content
@@ -561,11 +561,13 @@ class AD9959(object):
             mes = ['Disabled', 'Enabled'][int(ls_enable_bin)]
             mes += ' linear sweep for channel {0}.'.format(ch)
             print(mes)
+            print(cfr_old_bin, len(cfr_old_bin))
+            print(cfr_new_bin, len(cfr_new_bin))
 
         return
 
 
-    def configure_linear_sweep(self, channels=[0,1,2,3], lsrr=0, fsrr=0, rdw=0, fdw=0, disable=False):
+    def configure_linear_sweep(self, channels=[0,1,2,3], rsrr=0, fsrr=0, rdw=0, fdw=0, disable=False):
         """Configure the linear frequency sweep parameters for selected channels.
 
         The linear sweep ramp rate (lsrr) specifies the timestep of the rising ramp, falling sweep ramp rate
@@ -601,32 +603,40 @@ class AD9959(object):
         # can write all channels in one go
         self._channel_select(channels)
 
+        ######################################################
         # 1. Set the new falling and rising sweep ramp rate
         ramp_rate_word = ''
         rr_name = ['Falling', 'Rising']
-        for rr in [fsrr, rsrr]:
+        for i, rr in enumerate([fsrr, rsrr]):
             # 1.1 Compute RR word in binary
-            rr_time_step = 1/self.ref_clock_frequency
-            fraction_bin = round(rr/rr_time_step * 256)
+            rr_time_step = 4/self.system_clock_frequency
+            fraction_bin = round(rr/rr_time_step)
 
             # 1.2 Check for correct bounds
             if fraction_bin < 1:
                 print('Ramp rate below lower limit, choosing lowest possible value.')
+                fraction_bin = 1
             elif fraction_bin > 256:
                 print('Ramp rate above upper limit, choosing highest possible value.')
+                fraction_bin = 256
 
             # align the fraction_bin with binary representation
             print('Setting {0} sweep ramp rate to {1:1.3e} s'.format(rr_name[i], fraction_bin*rr_time_step))
             fraction_bin -= 1
-            ramp_rate_word += bin(fraction_bin)[2:]
-        # fill the ramp rate word up to 32 bit
-        ramp_rate_word += 16 * '0'
+            rrw_bin = bin(fraction_bin)[2:]
+            if len(rrw_bin) < 8:
+                rrw_bin = (8-len(rrw_bin))*'0' + rrw_bin
+            ramp_rate_word += rrw_bin
+            print('Len RRW', len(ramp_rate_word))
         
         # write the new ramp rate word to the RR register
         ramp_rate_word = ''.join(' 0' + b for b in ramp_rate_word)
         ramp_rate_word = ramp_rate_word[1:]
+        print('RRW: {0}'.format(ramp_rate_word), len(ramp_rate_word))
         self._write_to_dds_register(0x07, ramp_rate_word)
-
+        print(self._read_from_register(0x07, 16))
+        
+        ###############################################
         # 2. Set the falling and rising delta words.
         # calculate the fraction of the full frequency
         delta_word_registers = [0x09, 0x08]
@@ -639,11 +649,12 @@ class AD9959(object):
             closest_possible_value = (int(fraction_bin, base=2)/(2**32 -1) *
                                         self.system_clock_frequency)
             print('Setting {2} delta word of channel {1} to closest possible value {0}MHz'.format(
-                                                            closest_possible_value/1e6, channel, rr_name[i]))
+                                                            closest_possible_value/1e6, channels, rr_name[i]))
 
             # set the frequency word in the frequency register
             frequency_word = ''.join(' 0' + b for b in fraction_bin)
             frequency_word = frequency_word[1:]
-            if channel_word == 0:
-                self._write_to_dds_register(delta_word_registers[i], frequency_word)
+            self._write_to_dds_register(delta_word_registers[i], frequency_word)
+            print(frequency_word)
+            print(self._read_from_register(delta_word_registers[i], 32))
         return
