@@ -11,16 +11,42 @@ class AD9959(object):
     to the DDS processor.
     """
     
-    def __init__(self, vid=0x0456, pid=0xee25, auto_update=True):
+    def __init__(self, vid=0x0456, pid=0xee25, port_numbers=None, bus_number=None, auto_update=True, rfclk=50e6, clkmtp=10):
         """Initializes a handler for the usb controler.
+
+        If more than one AD9959 are connected via USB, they are in principle indistinguishable. The only way
+        to identify them is by specifying their USB bus address.
 
         vid : hex
             vendor ID of the device
         pid : hex
             product ID of the device
-
+        bus_number: int
+            Bus number of the connected device to distinguish between identical devices.
+        port_numbers: tuple
+            Contains the port and subport numbers to distinguish between identical devices.
+        refclk: float
+            Reference clock frequency in Hertz.
+        clkmtp: int
+            Clock multiplier. The reference clock signal is internally multiplied by this value to generate
+            the system clock frequency.
         """
-        dev = usb.core.find(idVendor=vid, idProduct=pid)
+        # find all usb devices with matching vid/pid
+        devs = list(usb.core.find(idVendor=vid, idProduct=pid, find_all=True))
+        dev = None
+        assert len(devs) > 0, 'No devices with matching vID/pID found!'
+        # if more than one AD9959 is present, decide by usb port address
+        if len(devs) > 1:
+            assert port_numbers is not None and bus_number is not None, 'More than one AD9959 present. Specify USB bus and port numbers!'
+            for d in devs:
+                if d.port_numbers == port_numbers and d.bus == bus_number:
+                    dev = d
+                    break
+            assert dev is not None, 'No matching device was found. Check bus and port numbers!'
+
+        else:
+            dev = devs[0]
+
         self.dev = dev
         dev.set_configuration()
         cnf = dev.configurations()[0]
@@ -36,11 +62,12 @@ class AD9959(object):
         self._usb_handler = usb.DeviceHandle(dev)
 
         # set default values for physical variables
-        self.ref_clock_frequency = 20e6 # 20MHz standard
-        self.system_clock_frequency = 20e6
+        self.ref_clock_frequency = rfclk
+        self.system_clock_frequency = rfclk
 
         # set default value for auto IO update
         self.auto_update = auto_update
+        self.set_clock_multiplier(clkmtp)
 
     def _reset_usb_handler(self):
         """Resets the usb handler via which communication takes place.
@@ -565,7 +592,6 @@ class AD9959(object):
             print(cfr_new_bin, len(cfr_new_bin))
 
         return
-
 
     def configure_linear_sweep(self, channels=[0,1,2,3], rsrr=0, fsrr=0, rdw=0, fdw=0, disable=False):
         """Configure the linear frequency sweep parameters for selected channels.
