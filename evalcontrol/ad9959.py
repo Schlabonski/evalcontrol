@@ -47,7 +47,6 @@ class AD9959(object):
         else:
             dev = devs[0]
 
-        #dev.reset() # prevent usbErrors
         self.dev = dev
         cnf = dev.configurations()[0]
         intf = cnf[(0,0)]
