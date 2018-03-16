@@ -48,7 +48,6 @@ class AD9959(object):
             dev = devs[0]
 
         self.dev = dev
-        dev.set_configuration()
         cnf = dev.configurations()[0]
         intf = cnf[(0,0)]
 
@@ -68,6 +67,9 @@ class AD9959(object):
         # set default value for auto IO update
         self.auto_update = auto_update
         self.set_clock_multiplier(clkmtp)
+
+    def __del__(self):
+        usb.util.dispose_resources(self.dev)
 
     def _reset_usb_handler(self):
         """Resets the usb handler via which communication takes place.
