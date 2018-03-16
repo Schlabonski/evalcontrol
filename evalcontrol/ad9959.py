@@ -3,6 +3,8 @@ import time
 
 import numpy as np
 
+from customhandler import DeviceHandle
+
 class AD9959(object):
     """This class emulates the AD9959 evaluation board for python.
 
@@ -58,16 +60,20 @@ class AD9959(object):
         self._ep4 = intf[3]
         self._ep88 = intf[5]
 
-        # create a handler for the usb controler
-        self._usb_handler = usb.DeviceHandle(dev)
-
         # set default values for physical variables
         self.ref_clock_frequency = rfclk
         self.system_clock_frequency = rfclk
 
         # set default value for auto IO update
         self.auto_update = auto_update
-        self.set_clock_multiplier(clkmtp)
+
+        # try to access device, it might still be in use by another handler,
+        #in this case, reset it
+        try:
+            self.set_clock_multiplier(clkmtp)
+        except usb.USBError:
+            self._reset_usb_handler()
+            self.set_clock_multiplier(clkmtp)
 
     def __del__(self):
         usb.util.dispose_resources(self.dev)
@@ -107,7 +113,8 @@ class AD9959(object):
         message = bytearray.fromhex(message)
 
         # endpoint 0x04 will forward the word to the specified register
-        self._usb_handler.bulkWrite(self._ep4, message)
+        with DeviceHandle(self.dev) as dh:
+            dh.bulkWrite(self._ep4, message)
 
     def _read_from_register(self, register, size):
         """Reads a word of length `size` from `register` of the DDS chip.
@@ -127,7 +134,8 @@ class AD9959(object):
 
         # set the controler to readback mode
         begin_readback = bytearray.fromhex('07 00 ' + size_hex)
-        self._usb_handler.bulkWrite(self._ep1, begin_readback)
+        with DeviceHandle(self.dev) as dh:
+            dh.bulkWrite(self._ep1, begin_readback)
 
         # construct the command to read out the register
         register_bin = bin(register).lstrip('0b')
@@ -135,15 +143,18 @@ class AD9959(object):
             register_bin = (7-len(register_bin))*'0' + register_bin
         register_bin = ''.join(' 0' + b for b in register_bin)
         readout_command = bytearray.fromhex('01' + register_bin)
-        self._usb_handler.bulkWrite(self._ep4, readout_command)
+        with DeviceHandle(self.dev) as dh:
+            dh.bulkWrite(self._ep4, readout_command)
         
         time.sleep(0.1)
         # read the message from endpoint 88
-        readout = self._usb_handler.bulkRead(self._ep88, size=size)
+        with DeviceHandle(self.dev) as dh:
+            readout = dh.bulkRead(self._ep88, size=size)
 
         # turn off readback mode
         end_readback = bytearray.fromhex('04 00')
-        self._usb_handler.bulkWrite(self._ep1, end_readback)
+        with DeviceHandle(self.dev) as dh:
+            dh.bulkWrite(self._ep1, end_readback)
         return readout
 
     def _load_IO(self):
@@ -151,8 +162,9 @@ class AD9959(object):
 
         """
         load_message = bytearray.fromhex('0C 00')
-        self._usb_handler.bulkWrite(self._ep1, load_message)
-        readout = self._usb_handler.bulkRead(self._ep81, 1)
+        with DeviceHandle(self.dev) as dh:
+            dh.bulkWrite(self._ep1, load_message)
+            readout = dh.bulkRead(self._ep81, 1)
         return readout
 
     def _update_IO(self):
@@ -160,8 +172,9 @@ class AD9959(object):
 
         """
         update_message = bytearray.fromhex('0C 10')
-        self._usb_handler.bulkWrite(self._ep1, update_message)
-        readout = self._usb_handler.bulkRead(self._ep81, 1)
+        with DeviceHandle(self.dev) as dh:
+            dh.bulkWrite(self._ep1, update_message)
+            readout = dh.bulkRead(self._ep81, 1)
         return readout
 
     def set_clock_multiplier(self, factor):
@@ -333,8 +346,9 @@ class AD9959(object):
             Encodes the setting of the frequency word.
 
         """
-        self._usb_handler.bulkWrite(self._ep4, message_channel_select)
-        self._usb_handler.bulkWrite(self._ep4, message_frequency_word)
+        with DeviceHandle(self.dev) as dh:
+            dh.bulkWrite(self._ep4, message_channel_select)
+            dh.bulkWrite(self._ep4, message_frequency_word)
 
     def set_frequency(self, frequency, channel=0, channel_word=0):
         """Sets a new frequency for a given channel.
