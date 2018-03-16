@@ -47,9 +47,10 @@ class AD9959(object):
         else:
             dev = devs[0]
 
-        self.dev = dev
+        dev.set_configuration()
         cnf = dev.configurations()[0]
         intf = cnf[(0,0)]
+        self.dev = dev
 
         # retrieve important endpoints of usb controller
         self._ep1 = intf[0]
