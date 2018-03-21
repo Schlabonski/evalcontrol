@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 
-from customhandler import DeviceHandle
+from .customhandler import DeviceHandle
 
 class AD9959(object):
     """This class emulates the AD9959 evaluation board for python.
@@ -13,7 +13,8 @@ class AD9959(object):
     to the DDS processor.
     """
     
-    def __init__(self, vid=0x0456, pid=0xee25, port_numbers=None, bus_number=None, auto_update=True, rfclk=50e6, clkmtp=10):
+    def __init__(self, vid=0x0456, pid=0xee25, port_numbers=None, bus_number=None, auto_update=True,
+            rfclk=50e6, clkmtp=10, channel=0):
         """Initializes a handler for the usb controler.
 
         If more than one AD9959 are connected via USB, they are in principle indistinguishable. The only way
@@ -33,10 +34,13 @@ class AD9959(object):
             Clock multiplier. The reference clock signal is internally multiplied by this value to generate
             the system clock frequency.
         """
+        self.channel = channel
+
         # find all usb devices with matching vid/pid
         devs = list(usb.core.find(idVendor=vid, idProduct=pid, find_all=True))
         dev = None
-        assert len(devs) > 0, 'No devices with matching vID/pID found!'
+        dev_mess = 'No devices with matching vID/pID {0}/{1} found!'.format(vid, pid)
+        assert len(devs) > 0, dev_mess
         # if more than one AD9959 is present, decide by usb port address
         if len(devs) > 1:
             assert port_numbers is not None and bus_number is not None, 'More than one AD9959 present. Specify USB bus and port numbers!'
@@ -350,7 +354,7 @@ class AD9959(object):
             dh.bulkWrite(self._ep4, message_channel_select)
             dh.bulkWrite(self._ep4, message_frequency_word)
 
-    def set_frequency(self, frequency, channel=0, channel_word=0):
+    def set_frequency(self, frequency, channel=None, channel_word=0):
         """Sets a new frequency for a given channel.
 
         :frequency: float
@@ -363,6 +367,8 @@ class AD9959(object):
 
         """
 
+        if channel is None:
+            channel = self.channel
         assert frequency <= self.system_clock_frequency, ("Frequency should not"
                 + " exceed system clock frequency! System clock frequency is {0}Hz".format(self.system_clock_frequency))
 
@@ -396,7 +402,7 @@ class AD9959(object):
         if self.auto_update:
             self._update_IO()
 
-    def set_phase(self, phase, channel=0):
+    def set_phase(self, phase, channel=None):
         """Sets the phase offset for a given channel.
 
         :phase: float
@@ -405,6 +411,8 @@ class AD9959(object):
             ID or list of IDs of the selected channels
 
         """
+        if channel is None:
+            channel = self.channel
         assert 0 <= phase <= 360,  'Phase should be between 0 and 360 degree!'
 
         # select the channels
@@ -454,7 +462,7 @@ class AD9959(object):
         if self.auto_update:
             self._update_IO()
 
-    def _enable_channel_modulation(self, channel=0, modulation_type='frequency', disable=False):
+    def _enable_channel_modulation(self, channel=None, modulation_type='frequency', disable=False):
         """Enables frequency modulation for selected channel(s).
         :channel: int or list
             channel ID or list of channel IDs that are selected
@@ -464,6 +472,8 @@ class AD9959(object):
             when True, modulation for this channel(s) is disabled.
 
         """
+        if channel is None:
+            channel = self.channel
         if np.issubdtype(type(channel), np.integer):
             channel = [channel]
         
@@ -496,7 +506,7 @@ class AD9959(object):
             if self.auto_update:
                 self._update_IO()
 
-    def enable_modulation(self, level=2, active_channels=[0,1,2,3], modulation_type='frequency'):
+    def enable_modulation(self, level=2, active_channels=None, modulation_type='frequency'):
         """This method chooses the modulation level and type.
 
         :level: int
@@ -510,6 +520,8 @@ class AD9959(object):
             'frequency', 'amplitude' or 'phase'
 
         """
+        if active_channels is None:
+            active_channels = self.channel
         if np.issubdtype(type(active_channels), np.integer):
             active_channels = [active_channels]
         active_channels.sort()
@@ -561,7 +573,7 @@ class AD9959(object):
         for ch in active_channels:
             self._enable_channel_modulation(channel=ch, modulation_type=modulation_type)
 
-    def _enable_channel_linear_sweep(self, channels=0, disable=False):
+    def _enable_channel_linear_sweep(self, channels=None, disable=False):
         """TODO: Docstring for _enable_channel_linear_sweep.
 
         :channel: int or list
@@ -570,6 +582,8 @@ class AD9959(object):
             when True, modulation for this channel(s) is disabled.
 
         """
+        if channels is None:
+            channels = self.channel
         if np.issubdtype(type(channels), np.integer):
             channels = [channels]
         
@@ -610,7 +624,7 @@ class AD9959(object):
 
         return
 
-    def configure_linear_sweep(self, channels=[0,1,2,3], rsrr=0, fsrr=0, rdw=0, fdw=0, disable=False):
+    def configure_linear_sweep(self, channels=None, rsrr=0, fsrr=0, rdw=0, fdw=0, disable=False):
         """Configure the linear frequency sweep parameters for selected channels.
 
         The linear sweep ramp rate (lsrr) specifies the timestep of the rising ramp, falling sweep ramp rate
@@ -633,6 +647,8 @@ class AD9959(object):
         :returns: TODO
 
         """
+        if channels is None:
+            channels = self.channel
         if np.issubdtype(type(channels), np.integer):
             channels = [channels]
         channels.sort()
@@ -701,3 +717,21 @@ class AD9959(object):
             print(frequency_word)
             print(self._read_from_register(delta_word_registers[i], 32))
         return
+
+class AD9959dev(AD9959):
+    def __init__(self, experiment, *args, **kwargs):
+        super(AD9959dev, self).__init__(*args, **kwargs)
+        self.default_frequency = 75e6
+
+    def __set__(self, obj, value):
+        """This sets the frequency of the channels. The method is needed to
+        ensure compatibility with our experimental control.
+        """
+        self.set_frequency(value)
+
+    def __get__(self, obj, value):
+        """This sets the frequency of the channels. The method is needed to
+        ensure compatibility with our experimental control.
+        """
+
+        return self.default_frequency
