@@ -39,7 +39,7 @@ class AD9959(object):
         # find all usb devices with matching vid/pid
         devs = list(usb.core.find(idVendor=vid, idProduct=pid, find_all=True))
         dev = None
-        dev_mess = 'No devices with matching vID/pID {0}/{1} found!'.format(vid, pid)
+        dev_mess = 'No devices with matching vID/pID {0}/{1} found!'.format(hex(vid), hex(pid))
         assert len(devs) > 0, dev_mess
         # if more than one AD9959 is present, decide by usb port address
         if len(devs) > 1:
