@@ -14,7 +14,7 @@ class AD9959(object):
     """
     
     def __init__(self, vid=0x0456, pid=0xee25, port_numbers=None, bus_number=None, auto_update=True,
-            rfclk=50e6, clkmtp=10, channel=0):
+            rfclk=50, clkmtp=10, channel=0):
         """Initializes a handler for the usb controler.
 
         If more than one AD9959 are connected via USB, they are in principle indistinguishable. The only way
@@ -65,8 +65,8 @@ class AD9959(object):
         self._ep88 = intf[5]
 
         # set default values for physical variables
-        self.ref_clock_frequency = rfclk
-        self.system_clock_frequency = rfclk
+        self.ref_clock_frequency = rfclk*1e6
+        self.system_clock_frequency = rfclk*1e6
 
         # set default value for auto IO update
         self.auto_update = auto_update
