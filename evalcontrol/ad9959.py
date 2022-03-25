@@ -354,6 +354,85 @@ class AD9959(object):
             dh.bulkWrite(self._ep4, message_channel_select)
             dh.bulkWrite(self._ep4, message_frequency_word)
 
+    
+    def toggle_amplitude_scaling(self, channel=None, amplitude_scaling=None):
+        """
+        Changes the amplitude modulation enable bit for a given channel.
+
+        :channel: int
+            Channel(s) for which the amplitude scaling should be enabled/disabled.
+        :amplitude_scaling: bool
+            If None, current state is toggled. Else the amplitude scaling will be set to `amplitude_scaling`.
+
+        """
+        if channel is None:
+            channel = self.channel
+
+        # select the chosen channels
+        self._channel_select(channel)
+
+        # load the current amplitude control register word
+        acr = self._read_from_register(0x06, 24)
+
+        # set the new state of amplitude scaling bit
+        if amplitude_scaling is None:
+            acr[12] = (acr[12] + 1) % 2 
+        elif amplitude_scaling:
+            acr[12] = 1
+        else:
+            acr[12] = 0
+
+        # construct the command for the cypress chip
+        acr_new_bin = ''.join(' 0'+str(b) for b in acr)
+        acr_new_bin = acr_new_bin[1:]
+
+        # write new values to register
+        self._write_to_dds_register(0x06, acr_new_bin)
+
+        # update I/O
+        self._load_IO()
+        if self.auto_update:
+            self._update_IO()
+
+
+    def set_amplitude(self, asf, channel=None, channel_word=0):
+        """ Sets the amplitude scaling factor for a given channel.
+
+        :asf: float
+            Between 0 and 1. DACs have 10-bit resolution.
+        :channel: int
+            Channel for which the amplitude scaling factor is set.
+        :channel_word: int
+            Channel word for the given channel. Every channel has 16 channel word registers that 
+            can be used for modulation.
+        """
+        if channel is None:
+            channel = self.channel
+
+        assert channel_word < 16, ("Channel word cannot exceed 15, input was {0}".format(channel_word))
+
+        # select the chosen channels
+        self._channel_select(channel)
+
+        # construct the asf word
+        fraction_bin = bin(int(round(asf * (2**10 - 1)))).lstrip('0b') # full range are 10 bit
+
+        # load the current amplitude control register word
+        acr = self._read_from_register(0x06, 24)
+
+        # set the asf word in the amplitude control register
+        asf_word = ''.join(' 0' + b for b in fraction_bin)
+        asf_word = asf_word[1:]
+
+        acr_new = acr[:15] + asf_word 
+        
+        if channel_word == 0:
+            self._write_to_dds_register(0x06, asf_word)
+        else:
+            register = channel_word - 1 + 0x0A
+            self._write_to_dds_register(register, asf_word)
+
+
     def set_frequency(self, frequency, channel=None, channel_word=0):
         """Sets a new frequency for a given channel.
 
