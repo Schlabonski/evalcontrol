@@ -6,7 +6,7 @@ A python library to control the AD9959 DDS Evaluation Board. This library is bas
 ## Installation
 To install the package from source simply do
 ```
-git clone https://github.com/Schlabonski/evalcontrol`
+git clone https://github.com/Schlabonski/evalcontrol
 cd evalcontrol
 python3 setup.py install
 ```
